@@ -78,24 +78,15 @@ CREATE OR REPLACE PACKAGE BODY api_core.PCK_BO_SITE_INFO
 --  V01.518 | 2017.03.06 | Hocine HAMMOU
 --          | Projet [10350] : Ajout de la procédure GetSitesByCountry
 --          |
---  V01.519 | 2017.05.15 | Maria Casals
---          | Projets 10128/10161 - Gestion des interactions et campagnes d'appels / CRM Lot 1
---          | => ajout des fonctions IS_IN_CRM, GetSiteid
 --          |
---  V01.520 | 2017.05.30 | Hocine HAMMOU
---          | Bug 88044 :[CRM] : ANO = Création automatique d'une indispo « Pas de PDA associé » pour un point de type consigne
---          | ==> Ajout dans la proc. GetSitesByCountry d'un filtre séléction sur les PUDO_TYPE_ID : MIGRATION_POINT, STANDARD_PICKUP_POINT et PARTNER_RELAY_POINT et Pickup Store
+--  V01.519 | 2017.03.28 | Leang NGUON
+--          | Projet RM2 2017  [10417] - Inventaire colis
 --          |
 -- ***************************************************************************
 IS
 
 c_packagename CONSTANT VARCHAR2(30) := $$PLSQL_UNIT ;
 c_country_code_NIR CONSTANT VARCHAR2(3) := 'NIR' ;  -- Code country 'IRELANDE DU NORD'
-
-c_MIGRATION_POINT        CONSTANT MASTER.SITE.PUDO_TYPE_ID%TYPE := 1 ;
-c_STANDARD_PICKUP_POINT  CONSTANT MASTER.SITE.PUDO_TYPE_ID%TYPE := 2 ;
-c_PARTNER_RELAY_POINT    CONSTANT MASTER.SITE.PUDO_TYPE_ID%TYPE := 3 ;
-c_PICKUP_STORE           CONSTANT MASTER.SITE.PUDO_TYPE_ID%TYPE := 21 ;
 
 -- ---------------------------------------------------------------------------
 --  UNIT         : GetActiveSites
@@ -145,7 +136,7 @@ BEGIN
                    , UPPER(TRIM(s.LANGUAGE_CODE)) -- [10093] 2016.06.21
                    , s.OPERATOR_ID                -- [10093] 2016.06.21
                    , COALESCE( MIN(TRIM(c.EMAIL)), max(TRIM(c.EMAIL)))
-                   , s.SITE_STATE_ID
+           , s.SITE_STATE_ID
                    )
    BULK COLLECT INTO p_site_tab
    FROM MASTER.SITE s
@@ -315,7 +306,7 @@ BEGIN
                    , UPPER(TRIM(s.LANGUAGE_CODE)) -- [10093] 2016.06.21
                    , s.OPERATOR_ID                -- [10093] 2016.06.21
                    , COALESCE( MIN(TRIM(c.EMAIL)), max(TRIM(c.EMAIL)))
-                   , s.SITE_STATE_ID
+           , s.SITE_STATE_ID
                    )
    BULK COLLECT INTO p_site_tab
    FROM MASTER.SITE s
@@ -369,10 +360,6 @@ END GetAllSites;
 -- ---------------------------------------------------------------------------
 --  V01.000 | 2017.03.06 | Hocine HAMMOU
 --          | Projet [10350] version initiale
---          |
---  V01.001 | 2017.05.30 | Hocine HAMMOU
---          | Ajout filtre séléction sur les PUDO_TYPE_ID : MIGRATION_POINT, STANDARD_PICKUP_POINT et PARTNER_RELAY_POINT et PICKUP STORE
---          |
 -- ---------------------------------------------------------------------------
 PROCEDURE GetSitesByCountry(p_country_code_tab IN api_core.TAB_ELEMENT_VARCHAR_TYPE, p_site_tab OUT NOCOPY api_core.TAB_SITE_TYPE )
 IS
@@ -412,10 +399,9 @@ BEGIN
                                   )
          AND TRIM(s.SITE_INTERNATIONAL_ID) IS NOT NULL
          AND s.SITE_STATE_ID  <> 1
-         AND s.PUDO_TYPE_ID IN ( c_MIGRATION_POINT, c_STANDARD_PICKUP_POINT, c_PARTNER_RELAY_POINT, c_PICKUP_STORE )
          GROUP BY UPPER(TRIM(s.COUNTRY_CODE)), UPPER(TRIM(s.SITE_INTERNATIONAL_ID)), UPPER(TRIM(s.LANGUAGE_CODE)), s.OPERATOR_ID , s.SITE_STATE_ID;
 
-      END IF;
+    END IF;
 
       MASTER_PROC.PCK_LOG.InsertLog_OK( p_procname => l_unit, p_start_time => l_start_date, p_result_detail => '[API_CORE] ACTIVES SITES REQUEST' || '-ELAPSED TIME:'||api_core.PCK_API_TOOLS.f_elapsed_miliseconds(l_start_date,systimestamp ) || 'ms.' );
 
@@ -427,100 +413,469 @@ EXCEPTION
       RAISE;
 END GetSitesByCountry;
 
-
 -- ---------------------------------------------------------------------------
---  UNIT         : IS_IN_CRM
---  DESCRIPTION  : Permet de savooir si le site est géré dans le CRM ou non
--- ---------------------------------------------------------------------------
+--  UNIT         : CHECK_VALIDITY_VALUE
+--  DESCRIPTION  : FLEET MANAGER envoie le mouvement d'un PDA
+--
+--
+--  IN           : @Param p_SITE_INTERNATIONAL_ID               - site to be verified
+--
+--  OUT          : numéro de l'erreur type
+--
+---------------------------------------------------------------------------
 --          | DATE       | AUTHOR
 --          | DESCRIPTION
 -- ---------------------------------------------------------------------------
---  V01.000 | 2017.05.15 | Maria Casals
---          | Projets 10128/10161 - Gestion des interactions et campagnes d'appels / CRM Lot 1
+--  V01.000 | 2017.03.28 | Leang NGUON
+--
+--          |
 -- ---------------------------------------------------------------------------
-FUNCTION IS_IN_CRM(p_SITE_ID IN NUMBER) RETURN NUMBER
+PROCEDURE CHECK_VALIDITY_VALUE ( p_SITE_INTERNATIONAL_ID IN VARCHAR2, p_check_result OUT NUMBER)
 IS
-  l_unit MASTER_PROC.PROC_LOG.PROC_NAME%TYPE := c_packagename||'.'||'IS_IN_CRM';
-  l_start_date  MASTER_PROC.PROC_LOG.START_TIME%TYPE := systimestamp;
-  l_result NUMBER := 0 ;
+      l_unit           MASTER_PROC.PROC_LOG.PROC_NAME%TYPE     := c_packagename||'.'||'CHECK_VALIDITY_VALUE';
+      l_start_date     MASTER_PROC.PROC_LOG.START_TIME%TYPE    := systimestamp;
+      l_result         VARCHAR2(4000);
+
 BEGIN
-  l_result := MASTER_PROC.PCK_SITE.IS_IN_CRM(p_SITE_ID => p_SITE_ID);
-  RETURN l_result;
+
+      -- ERROR NULL Controle le paramètre d'entré null
+      IF p_SITE_INTERNATIONAL_ID IS NULL THEN
+             p_check_result := PCK_API_CONSTANTS.errnum_requiredparam ;
+             l_result       := '[API_CORE] ' || PCK_API_CONSTANTS.errmsg_requiredparam || 'INPUT NULL' ;
+             RAISE_APPLICATION_ERROR( p_check_result, l_result);
+      END IF;
+
+
+      BEGIN
+            -- site existe, p_check_result = 0;
+            select 0 into p_check_result
+              from master.site t
+             where t.site_international_id = p_SITE_INTERNATIONAL_ID
+               and rownum = 1 ;
+
+
+      EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+               p_check_result := PCK_API_CONSTANTS.errnum_sitenotexists ;
+      END;
+
 
 EXCEPTION
-   WHEN OTHERS THEN
-      MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit, p_start_time => l_start_date, p_result_detail =>'[API_CORE] '||Dbms_Utility.format_error_stack || ' ' || Dbms_Utility.format_error_backtrace );
-      RAISE;
-END IS_IN_CRM;
+      WHEN OTHERS THEN
+             p_check_result := PCK_API_CONSTANTS.errnum_oracle_exception ;
+             MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit , p_start_time => l_start_date );
+             RAISE;
 
+END CHECK_VALIDITY_VALUE;
 
 -- ---------------------------------------------------------------------------
---  UNIT         : IS_IN_CRM
---  DESCRIPTION  : Permet de savoir si le site est géré dans le CRM ou non
--- ---------------------------------------------------------------------------
+--  UNIT         : GetInventoriesBySite
+--  DESCRIPTION  :
+--
+--
+--  IN           : @Param p_site_id                      - Site identification for inventory
+--
+--  OUT          : @Param p_TAB_INVENTORY_SITE           - liste of inventory
+--                 @Param p_result_code                  - if 0 the proc is correctly executed
+--
+---------------------------------------------------------------------------
 --          | DATE       | AUTHOR
 --          | DESCRIPTION
 -- ---------------------------------------------------------------------------
---  V01.000 | 2017.05.15 | Maria Casals
---          | Projets 10128/10161 - Gestion des interactions et campagnes d'appels / CRM Lot 1
+--  V01.000 | 2017.03.28 | Leang NGUON
+--
 -- ---------------------------------------------------------------------------
-FUNCTION IS_IN_CRM( p_SITE_INTERNATIONAL_ID IN VARCHAR2) RETURN NUMBER
+PROCEDURE GetInventoriesBySite ( p_SITE_INTERNATIONAL_ID IN VARCHAR2, p_TAB_INVENTORY_SITE OUT NOCOPY TAB_INVENTORY_SITE_TYPE, p_result_code OUT NUMBER)
 IS
-  l_unit MASTER_PROC.PROC_LOG.PROC_NAME%TYPE := c_packagename||'.'||'IS_IN_CRM';
-  l_start_date  MASTER_PROC.PROC_LOG.START_TIME%TYPE := systimestamp;
-  l_result NUMBER := 0 ;
+      l_unit           MASTER_PROC.PROC_LOG.PROC_NAME%TYPE     := c_packagename||'.'||'GetInventoriesBySite';
+      l_start_date     MASTER_PROC.PROC_LOG.START_TIME%TYPE    := systimestamp;
+      l_site_id               MASTER.INVENTORY_SITE.INVENTORY_SITE_ID%TYPE ;
+      l_result         VARCHAR2(4000);
 BEGIN
-  l_result := MASTER_PROC.PCK_SITE.IS_IN_CRM(p_SITE_INTERNATIONAL_ID => p_SITE_INTERNATIONAL_ID);
-  RETURN l_result;
+      -- value validation is KO
+      CHECK_VALIDITY_VALUE ( p_SITE_INTERNATIONAL_ID => p_SITE_INTERNATIONAL_ID, p_check_result => p_result_code );
+      IF p_result_code != 0 THEN
+             return;
+      END IF;
+
+
+      -- Limiter les lignes sortantes
+      with inventory as
+      (
+            SELECT i.inventory_site_id
+            from master.inventory_site i
+            inner join master.site s on s.site_id = i.site_id
+            where s.site_international_id = p_SITE_INTERNATIONAL_ID
+      )
+      , duration as
+      (
+            select p.inventory_site_id, round( (MAX(p.inventory_dtm) - MIN(p.inventory_dtm)) * 1440) as inventory_duration
+            from master.inventory_parcel p
+            inner join inventory inv on inv.inventory_site_id = p.inventory_site_id
+            group by p.inventory_site_id
+      )
+
+      -- C'est OK  p_result_code := 0 ;
+      SELECT INVENTORY_SITE_TYPE
+              (
+                  INVENTORY_SITE_ID => i.inventory_site_id
+                , SESSION_DTM       => i.session_dtm
+                , STATE             => i.state
+                , ORIGIN            => i.origin
+                , CREATION_DTM      => i.creation_dtm
+                , LAST_UPDATE_DTM   => i.last_update_dtm
+                , DURATION          => d.inventory_duration
+              )
+      BULK COLLECT INTO p_TAB_INVENTORY_SITE
+      from master.inventory_site i
+           inner join      inventory inv on inv.inventory_site_id = i.inventory_site_id
+           left outer join duration d    on d.inventory_site_id   = i.inventory_site_id
+      order by i.last_update_dtm desc
+      ;
 
 EXCEPTION
-   WHEN OTHERS THEN
-      MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit, p_start_time => l_start_date, p_result_detail =>'[API_CORE] '||Dbms_Utility.format_error_stack || ' ' || Dbms_Utility.format_error_backtrace );
-      RAISE;
-END IS_IN_CRM;
+      WHEN OTHERS THEN
+             MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit , p_start_time => l_start_date );
+             p_result_code := PCK_API_CONSTANTS.errnum_oracle_exception ;
+             l_result       := '[API_CORE] ' || PCK_API_CONSTANTS.errmsg_oracle_exception ;
+             RAISE_APPLICATION_ERROR( p_result_code, l_result);
 
+END GetInventoriesBySite;
 
 -- ---------------------------------------------------------------------------
---  UNIT         : GetSiteid
---  DESCRIPTION  : Permet de récupérer, pour un PDA donné, le SITE_INTERNATIONAL_ID auqel est rattaché le PDA
--- ---------------------------------------------------------------------------
+--  UNIT         : GetSiteInformation
+--  DESCRIPTION  :
+--
+--
+--  IN           : @Param p_site_id                      - Site identification for inventory
+--
+--  OUT          : @Param p_TAB_INVENTORY_SITE           - liste of inventory
+--                 @Param p_result_code                  - if 0 the proc is correctly executed
+--
+---------------------------------------------------------------------------
 --          | DATE       | AUTHOR
 --          | DESCRIPTION
 -- ---------------------------------------------------------------------------
---  V01.000 | 2017.05.15 | Maria Casals
---          | Projets 10128/10161 - Gestion des interactions et campagnes d'appels / CRM Lot 1
+--  V01.000 | 2017.03.28 | Leang NGUON
+--
 -- ---------------------------------------------------------------------------
-FUNCTION GetSiteID(p_pdaid IN CONFIG.PDA.PDA_ID%TYPE, p_date IN DATE DEFAULT SYSDATE) RETURN VARCHAR2
+PROCEDURE GetSiteInformation ( p_SITE_INTERNATIONAL_ID IN VARCHAR2, p_SITE_INFORMATION_TYPE OUT NOCOPY SITE_INFORMATION_TYPE, p_result_code OUT NUMBER)
 IS
-  l_unit MASTER_PROC.PROC_LOG.PROC_NAME%TYPE := c_packagename||'.'||'GetSiteid';
-  l_start_date  MASTER_PROC.PROC_LOG.START_TIME%TYPE := systimestamp;
-  l_SITE_ID MASTER.SITE.SITE_ID%TYPE := NULL;
-  l_SITE_INTERNATIONAL_ID MASTER.SITE.SITE_INTERNATIONAL_ID%TYPE := NULL;
+      l_unit           MASTER_PROC.PROC_LOG.PROC_NAME%TYPE     := c_packagename||'.'||'GetSiteInformation';
+      l_start_date     MASTER_PROC.PROC_LOG.START_TIME%TYPE    := systimestamp;
+      l_site_id        MASTER.INVENTORY_SITE.INVENTORY_SITE_ID%TYPE ;
+      l_site_name      VARCHAR2(100);
+      l_result         VARCHAR2(4000);
 BEGIN
 
-  -- 1ere etape récupération du site_id pour un pda_id donné
-  BEGIN
-     l_SITE_ID := MASTER_PROC.PCK_SITE.GetSiteid(p_pdaid => p_pdaid, p_date => p_date);
-  EXCEPTION
-     WHEN OTHERS THEN
-        RETURN NULL;
-  END;
+      -- C'est OK au départ
+      p_result_code := 0 ;
 
-  -- 2eme etape : si un site_id a précédemment été obtenu alors on récupère son site_international_id
-  BEGIN
-     l_SITE_INTERNATIONAL_ID := MASTER_PROC.PCK_SITE.GetSiteInternationalID(p_site_id =>l_SITE_ID);
-  EXCEPTION
-     WHEN OTHERS THEN
-        RETURN NULL;
-  END;
+      -- ERREUR valeur null
+      IF p_SITE_INTERNATIONAL_ID IS NULL THEN
+            p_result_code := PCK_API_CONSTANTS.errmsg_requiredparam ;
+            return ;
+      END IF;
 
-  RETURN l_SITE_INTERNATIONAL_ID;
+      BEGIN
+
+            select SITE_INFORMATION_TYPE(
+                    SITE_INTERNATIONAL_ID => s.site_international_id  -- AS site_international_id
+                  , BUSINESS_NAME => s.name                           -- AS BUSINESS_NAME
+                  , SYNC_TIME => s.sync_time                          -- AS sync_time
+                  , COUNTRY_CODE => s.country_code
+                  )
+            into p_SITE_INFORMATION_TYPE
+            from master.site s
+            where s.site_international_id = p_SITE_INTERNATIONAL_ID
+            and rownum = 1
+            ;
+
+      EXCEPTION
+             WHEN NO_DATA_FOUND THEN
+                   p_SITE_INFORMATION_TYPE := new SITE_INFORMATION_TYPE();
+                   p_result_code := PCK_API_CONSTANTS.errnum_sitenotexists ;
+      END ;
 
 EXCEPTION
-   WHEN OTHERS THEN
-      MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit, p_start_time => l_start_date, p_result_detail =>'[API_CORE] '||Dbms_Utility.format_error_stack || ' ' || Dbms_Utility.format_error_backtrace );
-      RAISE;
-END GetSiteid;
+      WHEN OTHERS THEN
+             MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit , p_start_time => l_start_date );
+             p_result_code := PCK_API_CONSTANTS.errnum_oracle_exception ;
+             l_result       := '[API_CORE] ' || PCK_API_CONSTANTS.errmsg_oracle_exception ;
+             RAISE_APPLICATION_ERROR( p_result_code, l_result);
+
+END GetSiteInformation;
+
+-- ---------------------------------------------------------------------------
+--  UNIT         : InventoryRulesBySite
+--  DESCRIPTION  :
+--
+--
+--  IN           : @Param p_INVENTORY_RULE_TYPE                      -  One rule to store
+--
+--  OUT          : @Param p_INVENTORY_RULE_TYPE                      -  Compte rendu dans CHECK_RESULT
+--                 @Param p_site_rules                               -  Retourne le résultat trouvé
+--
+---------------------------------------------------------------------------
+--          | DATE       | AUTHOR
+--          | DESCRIPTION
+-- ---------------------------------------------------------------------------
+--  V01.000 | 2017.04.10 | Leang NGUON
+--
+-- ---------------------------------------------------------------------------
+PROCEDURE InventoryRulesBySite
+                (
+                    p_INVENTORY_RULE_TYPE IN OUT NOCOPY INVENTORY_RULE_TYPE
+                  , p_site_rules             OUT NOCOPY MASTER.SITE_RULES%ROWTYPE
+                )
+ IS
+      l_unit                MASTER_PROC.PROC_LOG.PROC_NAME%TYPE     := c_packagename||'.'||'InventoryRulesBySite';
+      l_start_date          MASTER_PROC.PROC_LOG.START_TIME%TYPE    := systimestamp;
+      l_result              VARCHAR2(4000);
+
+
+BEGIN
+
+
+      -- 1) ERROR MISSING PARAM Controle des champs obligatoires en entree
+      l_result := p_INVENTORY_RULE_TYPE.MissingMandatoryParameters2;
+      IF TRIM(l_result) IS NOT NULL THEN
+             p_INVENTORY_RULE_TYPE.CHECK_RESULT := PCK_API_CONSTANTS.errnum_requiredparam ;
+             return ;
+      END IF;
+
+      -- 2) Check existance of PUDO
+      BEGIN
+          select s.site_id into p_site_rules.site_id
+            from master.site s
+           where s.site_international_id = NVL( p_INVENTORY_RULE_TYPE.SITE_INTERNATIONAL_ID, '0')
+             and rownum = 1
+               ;
+      EXCEPTION
+          WHEN NO_DATA_FOUND THEN
+               p_INVENTORY_RULE_TYPE.CHECK_RESULT := PCK_API_CONSTANTS.errnum_sitenotexists ;
+               return ;
+      END ;
+
+      -- 3) Check property_name
+      BEGIN
+          select pda_property_id into p_site_rules.pda_property_id
+            from config.pda_property
+           where pda_property_name = p_INVENTORY_RULE_TYPE.PROPERTY_NAME
+             and rownum = 1 ;
+      EXCEPTION
+          -- Stop
+          -- Fatal Error because no property name does not recongnised
+          WHEN NO_DATA_FOUND THEN
+             p_INVENTORY_RULE_TYPE.CHECK_RESULT := PCK_API_CONSTANTS.errnum_ppynotexists ;
+             return ;
+      END ;
+
+      -- UPDATE OR INSERT PROPERTY
+      BEGIN
+          select * into p_site_rules
+            from master.site_rules
+           where pda_property_id = p_site_rules.pda_property_id
+             and site_id         = p_site_rules.site_id
+             and rownum          = 1
+               ;
+
+          p_INVENTORY_RULE_TYPE.CHECK_RESULT := 0 ;
+
+
+      EXCEPTION
+          -- INSERT
+          WHEN NO_DATA_FOUND THEN
+               p_INVENTORY_RULE_TYPE.CHECK_RESULT := PCK_API_CONSTANTS.errnum_rulenotexists ;
+
+      END ;
+
+
+EXCEPTION
+      WHEN OTHERS THEN
+             MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit , p_start_time => l_start_date );
+             COMMIT;
+             RAISE;
+END InventoryRulesBySite;
+
+-- ---------------------------------------------------------------------------
+--  UNIT         : SetInventoryRulesBySite
+--  DESCRIPTION  :
+--
+--
+--  IN           : @Param p_TAB_INVENTORY_RULE_TYPE                      - List of Inventory Rule to set
+--
+--  OUT          : @Param p_TAB_INVENTORY_RULE_TYPE                      - liste of return statuses
+--                 @Param p_result_code                                  - if  0, the operation is correctly done for all site, all properties
+--                                                                         if -n, there are n values failed
+--
+---------------------------------------------------------------------------
+--          | DATE       | AUTHOR
+--          | DESCRIPTION
+-- ---------------------------------------------------------------------------
+--  V01.000 | 2017.04.10 | Leang NGUON
+--
+-- ---------------------------------------------------------------------------
+
+PROCEDURE SetInventoryRulesBySite ( p_TAB_INVENTORY_RULE_TYPE IN OUT NOCOPY TAB_INVENTORY_RULE_TYPE)
+IS
+      l_unit                MASTER_PROC.PROC_LOG.PROC_NAME%TYPE     := c_packagename||'.'||'SetInventoryRules';
+      l_start_date          MASTER_PROC.PROC_LOG.START_TIME%TYPE    := systimestamp;
+      l_result              VARCHAR2(4000);
+      p_result_code         NUMBER ;
+      l_last_update_dtm     TIMESTAMP(6) WITH TIME ZONE;
+      l_site_rules          MASTER.SITE_RULES%ROWTYPE;
+
+
+
+BEGIN
+      -- TIMESTAMP
+      select to_timestamp_tz(to_char( sysdate, 'DD/MM/YYYY HH24:MI:SS') || ' ' || to_char((level -12), 'S00')|| ':00', 'DD/MM/YYYY HH24:MI:SS TZH:TZM')
+        into l_last_update_dtm  from dual  connect by level < 1 ;
+
+      -- ERROR NULL Controle le paramètre d'entré null
+      IF p_TAB_INVENTORY_RULE_TYPE IS NULL THEN
+             p_result_code  := PCK_API_CONSTANTS.errnum_requiredparam ;
+             l_result       := '[API_CORE] ' || PCK_API_CONSTANTS.errmsg_requiredparam || 'INPUT NULL' ;
+             RAISE_APPLICATION_ERROR( p_result_code, l_result);
+      END IF;
+
+
+      FOR indx IN p_TAB_INVENTORY_RULE_TYPE.FIRST .. p_TAB_INVENTORY_RULE_TYPE.LAST
+      LOOP
+
+
+           -- Check parameters are correct
+           InventoryRulesBySite (
+                p_INVENTORY_RULE_TYPE  => p_TAB_INVENTORY_RULE_TYPE(indx)
+              , p_site_rules           => l_site_rules
+           );
+
+           -- PROPERTY_VALUE must be not null
+           IF p_TAB_INVENTORY_RULE_TYPE(indx).PROPERTY_VALUE IS NULL THEN
+                 p_TAB_INVENTORY_RULE_TYPE(indx).CHECK_RESULT := PCK_API_CONSTANTS.errnum_requiredparam ;
+                 continue;
+           END IF ;
+
+           -- Rule does not exist, insert
+           IF p_TAB_INVENTORY_RULE_TYPE(indx).CHECK_RESULT = PCK_API_CONSTANTS.errnum_rulenotexists THEN
+
+                 -- C'est alors OK car on a bien inseré la nouvelle valeur
+                 p_TAB_INVENTORY_RULE_TYPE(indx).CHECK_RESULT := 0 ;
+
+                  -- C'est bon
+                 INSERT INTO MASTER.SITE_RULES
+                  (
+                      site_id
+                    , pda_property_id
+                    , pda_property_value
+                    , user_id
+                  )
+                 VALUES
+                  (
+                      l_site_rules.site_id
+                    , l_site_rules.pda_property_id
+                    , p_TAB_INVENTORY_RULE_TYPE(indx).PROPERTY_VALUE
+                    , 0
+                  );
+
+
+           END IF;
+
+           -- Rule exists, update new value
+           IF p_TAB_INVENTORY_RULE_TYPE(indx).CHECK_RESULT = 0 THEN
+
+                -- UPDATE IF aleready exists
+                update master.site_rules
+                   set pda_property_value = p_TAB_INVENTORY_RULE_TYPE(indx).PROPERTY_VALUE
+                     , laste_update_dtm = l_last_update_dtm
+                 where pda_property_id = l_site_rules.pda_property_id
+                   and site_id = l_site_rules.site_id
+                     ;
+           END IF;
+
+
+      END LOOP ;
+
+      COMMIT ;
+
+
+EXCEPTION
+      WHEN OTHERS THEN
+             MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit , p_start_time => l_start_date );
+             COMMIT;
+             p_result_code := PCK_API_CONSTANTS.errnum_oracle_exception ;
+             RAISE;
+
+END SetInventoryRulesBySite;
+
+-- ---------------------------------------------------------------------------
+--  UNIT         : GetInventoryRulesBySite
+--  DESCRIPTION  :
+--
+--
+--  IN           : @Param p_TAB_INVENTORY_RULE_TYPE                      - liste of inventory Rules to request
+--
+--  OUT          : @Param p_TAB_INVENTORY_RULE_TYPE                      - liste of obtained inventory rule values with return status
+--                 @Param p_result_code                                  - if  0, everything is ok
+--                                                                         ij -n, there are n values failed
+---------------------------------------------------------------------------
+--          | DATE       | AUTHOR
+--          | DESCRIPTION
+-- ---------------------------------------------------------------------------
+--  V01.000 | 2017.04.11 | Leang NGUON
+--
+-- ---------------------------------------------------------------------------
+PROCEDURE GetInventoryRulesBySite ( p_TAB_INVENTORY_RULE_TYPE IN OUT NOCOPY TAB_INVENTORY_RULE_TYPE)
+IS
+      l_unit                MASTER_PROC.PROC_LOG.PROC_NAME%TYPE     := c_packagename||'.'||'SetInventoryRules';
+      l_start_date          MASTER_PROC.PROC_LOG.START_TIME%TYPE    := systimestamp;
+      l_result              VARCHAR2(4000);
+      p_result_code         NUMBER ;
+      l_site_rules          MASTER.SITE_RULES%ROWTYPE;
+
+BEGIN
+
+
+      -- ERROR NULL Controle le paramètre d'entré null
+      IF p_TAB_INVENTORY_RULE_TYPE IS NULL THEN
+             p_result_code  := PCK_API_CONSTANTS.errnum_requiredparam ;
+             l_result       := '[API_CORE] ' || PCK_API_CONSTANTS.errmsg_requiredparam || 'INPUT NULL' ;
+             RAISE_APPLICATION_ERROR( p_result_code, l_result);
+      END IF;
+
+
+      FOR indx IN p_TAB_INVENTORY_RULE_TYPE.FIRST .. p_TAB_INVENTORY_RULE_TYPE.LAST
+      LOOP
+
+           -- Check parameters are correct
+           InventoryRulesBySite (
+                p_INVENTORY_RULE_TYPE  => p_TAB_INVENTORY_RULE_TYPE(indx)
+              , p_site_rules           => l_site_rules
+           );
+
+           -- Rule exists, update new value
+           IF p_TAB_INVENTORY_RULE_TYPE(indx).CHECK_RESULT = 0 THEN
+
+                p_TAB_INVENTORY_RULE_TYPE(indx).PROPERTY_VALUE := l_site_rules.pda_property_value ;
+
+           END IF;
+
+      END LOOP ;
+
+      -- C'est OK
+      COMMIT ;
+
+
+EXCEPTION
+      WHEN OTHERS THEN
+             MASTER_PROC.PCK_LOG.InsertLog_KO( p_procname => l_unit , p_start_time => l_start_date );
+             COMMIT;
+             p_result_code := PCK_API_CONSTANTS.errnum_oracle_exception ;
+             RAISE;
+
+END GetInventoryRulesBySite;
+
 
 
 END PCK_BO_SITE_INFO;
