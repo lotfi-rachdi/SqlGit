@@ -70,6 +70,12 @@ CREATE OR REPLACE PACKAGE api_core.PCK_API_CONSTANTS
 --  V00.214 | 2017.03.01 | Hocine HAMMOU
 --          | Projet [10350] Ajout des constantes type de device
 --          |
+--  V00.215 | 2017.03.07 | Hocine HAMMOU
+--          | Projet [10718] Ajout des constantes pour la fonctionnalité aide au rangement
+--          |
+--  V00.216 | 2017.03.28 | Leang NGUON
+--          | Projet RM2 2017  [10417] - Inventaire colis
+--          |
 -- ***************************************************************************
 IS
 
@@ -89,6 +95,7 @@ c_evt_type_INVENTORY           CONSTANT CONFIG.EVENT_TYPE.EVENT_TYPE_NAME%TYPE :
 c_evt_type_PARCEL_INVENTORY    CONSTANT CONFIG.EVENT_TYPE.EVENT_TYPE_NAME%TYPE := 'PARCEL_INVENTORY';  -- 2016.12.23 projet [10472]
 c_evt_type_SCAN_DPL            CONSTANT CONFIG.EVENT_TYPE.EVENT_TYPE_NAME%TYPE := 'SCAN_DPL';  -- 2016.12.27 projet [10472]
 c_evt_type_NOT_FOUND           CONSTANT CONFIG.EVENT_TYPE.EVENT_TYPE_NAME%TYPE := 'NOT_FOUND';  -- 2017.01.10 projet [10472]
+c_evt_type_STOCK               CONSTANT CONFIG.EVENT_TYPE.EVENT_TYPE_NAME%TYPE := 'STOCK';  -- 2017.03.07 projet [10718]
 
 
 -- Ce sont les statuts à renvoyer vers la couche WEB API
@@ -157,11 +164,12 @@ c_PROP_DELIVERY_FIRM_PARCEL    CONSTANT VARCHAR2(50) := 'DELIVERY_FIRM_PARCEL_ID
 c_PROP_ASSOCIATED_CAB2D        CONSTANT VARCHAR2(50) := 'ASSOCIATED_CAB2D'       ; c_PROP_MASK_ASSOCIATED_CAB2D   CONSTANT VARCHAR2(50)  := '';
 c_PROP_ABANDONED               CONSTANT VARCHAR2(50) := 'ABANDONED';
 
-c_PROP_INVENTORY_STATE         CONSTANT VARCHAR2(50) := 'INVENTORY_STATE';    c_PROP_MASK_INVENTORY_STATE   CONSTANT VARCHAR2(50)  := '';
-c_PROP_INVENTORY_SESSION       CONSTANT VARCHAR2(50) := 'INVENTORY_SESSION';  c_PROP_MASK_INVENTORY_SESSION   CONSTANT VARCHAR2(50)  := '';
+c_PROP_INVENTORY_STATE         CONSTANT VARCHAR2(50) := 'INVENTORY_STATE';    c_PROP_MASK_INVENTORY_STATE    CONSTANT VARCHAR2(50)  := '';
+c_PROP_INVENTORY_SESSION       CONSTANT VARCHAR2(50) := 'INVENTORY_SESSION';  c_PROP_MASK_INVENTORY_SESSION  CONSTANT VARCHAR2(50)  := '';
 c_PROP_INVENTORY_ORIGIN        CONSTANT VARCHAR2(50) := 'INVENTORY_ORIGIN';   c_PROP_MASK_INVENTORY_ORIGIN   CONSTANT VARCHAR2(50)  := '';
-c_PROP_INVENTORY_USE_CASE      CONSTANT VARCHAR2(50) := 'INVENTORY_USE_CASE'; c_PROP_MASK_INVENTORY_USE_CASE   CONSTANT VARCHAR2(50)  := '';
+c_PROP_INVENTORY_USE_CASE      CONSTANT VARCHAR2(50) := 'INVENTORY_USE_CASE'; c_PROP_MASK_INVENTORY_USE_CASE CONSTANT VARCHAR2(50)  := '';
 
+c_PROP_STORAGE_NUMBER          CONSTANT VARCHAR2(50) := 'STORAGE_NUMBER';     c_PROP_MASK_STORAGE_NUMBER     CONSTANT VARCHAR2(50)  := '';
 
 
 -- LISTE EXHAUSTIVE DES STATUTS D'ETAPE DU CYCLE DE VIE D'UN COLIS
@@ -277,6 +285,19 @@ errmsg_period_overlapping      constant varchar2(200):= 'PERIOD OVERLAPPING.' ;
 
 errnum_sitenotexists           constant number := -20506; -- NO DATA FOUND               -- 2017.02.21
 errmsg_sitenotexists           constant varchar2(200):= 'THIS SITE DOES NOT EXIST : ' ;
+
+
+-- DEFINITION DES CONSTANTES D'ERREUR: tranche 20500
+errnum_oracle_exception        constant number            := -20507;
+errmsg_oracle_exception        constant varchar2(200)     := 'ORACLE EXCEPTION IN API_CORE.PCK_BO_SITE_INFO' ;
+-- PDA_PROPERTY_NAME not existed  2017.04.07
+errnum_ppynotexists           constant number             := -20509;
+errmsg_ppynotexists           constant varchar2(200)      := 'NO PDA_PROPERTY_NAME EQUAL TO ' ;
+-- INVENTORY_RULE not existed  2017.04.10
+errnum_rulenotexists           constant number             := -20510;
+errmsg_rulenotexists           constant varchar2(200)      := 'THIS INVENTORY RULE DOES NOT EXIST ' ;
+
+
 
 END PCK_API_CONSTANTS;
 

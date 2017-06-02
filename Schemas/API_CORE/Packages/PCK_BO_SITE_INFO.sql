@@ -39,9 +39,9 @@ CREATE OR REPLACE PACKAGE api_core.PCK_BO_SITE_INFO
 --  V01.504 | 2017.03.06 | Hocine HAMMOU
 --          | Projet [10350] : Ajout de la procédure GetSitesByCountry
 --          |
---  V01.505 | 2017.05.15 | Maria Casals
---          | Projets 10128/10161 - Gestion des interactions et campagnes d'appels / CRM Lot 1
---          | => ajout des fonctions IS_IN_CRM, GetSiteid
+--  V01.519 | 2017.03.28 | Leang NGUON
+--          | Projet RM2 2017  [10417] - Inventaire colis
+--          |
 -- ***************************************************************************
 IS
 
@@ -59,11 +59,11 @@ FUNCTION  GetAllSites RETURN api_core.TAB_SITE_TYPE;
 
 PROCEDURE GetSitesByCountry(p_country_code_tab IN api_core.TAB_ELEMENT_VARCHAR_TYPE, p_site_tab OUT NOCOPY api_core.TAB_SITE_TYPE );
 
-FUNCTION IS_IN_CRM(p_SITE_ID IN NUMBER) RETURN NUMBER;
-
-FUNCTION IS_IN_CRM(p_SITE_INTERNATIONAL_ID IN VARCHAR2) RETURN NUMBER;
-
-FUNCTION GetSiteid(p_pdaid IN CONFIG.PDA.PDA_ID%TYPE, p_date IN DATE DEFAULT SYSDATE) RETURN VARCHAR2;
+-- Modif 2017.04.11 Leang NGUON
+PROCEDURE GetInventoriesBySite    ( p_SITE_INTERNATIONAL_ID   IN VARCHAR2, p_TAB_INVENTORY_SITE    OUT NOCOPY TAB_INVENTORY_SITE_TYPE,       p_result_code OUT NUMBER);
+PROCEDURE GetSiteInformation      ( p_SITE_INTERNATIONAL_ID   IN VARCHAR2, p_SITE_INFORMATION_TYPE OUT NOCOPY SITE_INFORMATION_TYPE,         p_result_code OUT NUMBER);
+PROCEDURE SetInventoryRulesBySite (                                        p_TAB_INVENTORY_RULE_TYPE IN OUT NOCOPY TAB_INVENTORY_RULE_TYPE );
+PROCEDURE GetInventoryRulesBySite (                                        p_TAB_INVENTORY_RULE_TYPE IN OUT NOCOPY TAB_INVENTORY_RULE_TYPE );
 
 END PCK_BO_SITE_INFO;
 
