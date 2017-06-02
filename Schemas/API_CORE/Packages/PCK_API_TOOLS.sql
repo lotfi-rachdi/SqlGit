@@ -1,4 +1,5 @@
 CREATE OR REPLACE PACKAGE api_core.PCK_API_TOOLS
+-- Add comment
 -- ***************************************************************************
 --  PACKAGE     : API_CORE.PCK_API_TOOLS
 --  DESCRIPTION : Package à très bas niveau avec des fonctions simples
