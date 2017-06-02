@@ -1,1 +1,0 @@
-GRANT EXECUTE ON api_core.tab_inventory_rule_type TO api_front;
